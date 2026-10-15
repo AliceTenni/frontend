@@ -4,6 +4,7 @@ import type { RecentPayment, ResourceStat } from "../api/analytics.js";
 import { ErrorBanner } from "./ErrorBanner.js";
 import { StatusTag, formatPrice, shortAddress } from "./ResourceCard.js";
 import { StatCard, formatCount, timeAgo } from "./StatCard.js";
+import { safeExternalUrl } from "../utils/safeExternalUrl.js";
 
 interface Props {
   apiKey: string;
@@ -109,6 +110,7 @@ function ResourceRow({ resource: r, share }: { resource: ResourceStat; share: nu
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const pct = Math.round(share * 100);
+  const accessUrl = safeExternalUrl(r.accessUrl);
 
   return (
     <li>
@@ -157,14 +159,18 @@ function ResourceRow({ resource: r, share }: { resource: ResourceStat; share: nu
           <StatusTag status={r.verificationStatus} type="verify" />
         </div>
         <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Resource URL</p>
-        <a
-          href={r.accessUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 block truncate font-mono text-xs text-accent-text hover:underline"
-        >
-          {r.accessUrl}
-        </a>
+        {accessUrl ? (
+          <a
+            href={accessUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 block truncate font-mono text-xs text-accent-text hover:underline"
+          >
+            {r.accessUrl}
+          </a>
+        ) : (
+          <p className="mt-1 block truncate font-mono text-xs text-fg-subtle">{r.accessUrl}</p>
+        )}
 
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-fg-muted">Recent payments</p>
         {r.recentPayments.length > 0 ? (
