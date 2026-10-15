@@ -10,6 +10,16 @@ interface Props {
 type PublishType = "link" | "file";
 type Step = "form" | "submitting" | "success" | "error";
 
+export function isValidHttpUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:";
+}
+
 export function PublishModal({ apiKey, onClose, onPublished }: Props) {
   const [publishType, setPublishType] = useState<PublishType>("link");
   const [step, setStep] = useState<Step>("form");
@@ -23,14 +33,26 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setStep("submitting");
     setErrorMsg("");
+
+    const idempotencyKey =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    if (publishType === "link" && !isValidHttpUrl(externalUrl)) {
+      setErrorMsg("Please enter a valid URL starting with http:// or https://.");
+      setStep("error");
+      return;
+    }
+
+    setStep("submitting");
 
     try {
       if (publishType === "link") {
         await publishLinkResource(
           { title, description: description || undefined, price, externalUrl },
           apiKey,
+          idempotencyKey,
         );
       } else {
         if (!file) throw new Error("Please select a file to upload before publishing.");
@@ -39,7 +61,7 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
         if (description) formData.append("description", description);
         formData.append("price", price);
         formData.append("file", file);
-        await publishFileResource(formData, apiKey);
+        await publishFileResource(formData, apiKey, idempotencyKey);
       }
       setStep("success");
       onPublished();

@@ -69,7 +69,6 @@ function sortResources(list: Resource[], sort: SortKey): Resource[] {
 }
 
 /* ─── constants ─────────────────────────────────────────────────────────── */
-const API_KEY = import.meta.env.VITE_API_KEY ?? "";
 const PUBLISHING_DOCS_URL = "https://docs.synapsvault.app/publishing";
 
 const DEFAULT_FILTERS: CatalogFilters = {
@@ -82,8 +81,8 @@ const DEFAULT_FILTERS: CatalogFilters = {
 
 const MARKETPLACE_TABS: Tab[] = ["catalog", "leaderboard", "purchases", "agent"];
 const CREATOR_TABS: Tab[] = ["dashboard", "analytics"];
-/** Number-key shortcuts, in display order. Creator tabs only bind with an API key. */
-const TAB_HOTKEYS: Tab[] = [...MARKETPLACE_TABS, ...(API_KEY ? CREATOR_TABS : [])];
+/** Number-key shortcuts, in display order. Creator tabs only bind when authenticated. */
+const TAB_HOTKEYS: Tab[] = [...MARKETPLACE_TABS, ...CREATOR_TABS];
 
 const TAB_LABEL_KEYS: Record<Tab, string> = {
   catalog: "app.tab_catalog", leaderboard: "app.tab_leaderboard", purchases: "app.tab_purchases",
@@ -161,6 +160,10 @@ export default function App() {
   const { theme, toggleTheme }          = useTheme();
   const wallet                          = useWalletConnection();
   const { t, i18n }                     = useTranslation();
+  /** Session token obtained via wallet-signature login; gates creator features. */
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [signingIn, setSigningIn]       = useState(false);
+  const isAuthenticated                 = Boolean(sessionToken);
 
   /* catalog — debounced so typing doesn't fire a request per keystroke */
   const debouncedFilters = useDebouncedValue(filters, 250);
@@ -243,6 +246,33 @@ export default function App() {
     setSidebarOpen(false);
   }, []);
 
+  /* ── Wallet-signature login ──────────────────────────────────────────── */
+  const signIn = useCallback(async () => {
+    if (signingIn) return;
+    setSigningIn(true);
+    try {
+      let address = wallet.address;
+      if (wallet.status !== "connected" || !address) {
+        address = await wallet.connect();
+      }
+      if (!address) throw new Error(t("app.signin_failed"));
+      const message = `Sign in to ${t("app.title")}\nAddress: ${address}\nIssued: ${new Date().toISOString()}`;
+      const token = await wallet.signMessage(message);
+      if (!token) throw new Error(t("app.signin_failed"));
+      setSessionToken(token);
+      setToast({ message: t("app.signed_in") });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : t("app.signin_failed") });
+    } finally {
+      setSigningIn(false);
+    }
+  }, [signingIn, wallet, t]);
+
+  const signOut = useCallback(() => {
+    setSessionToken(null);
+    if (tab === "dashboard" || tab === "analytics") setTab("catalog");
+  }, [tab]);
+
   // Keep showing the current results while a refetch is in flight; only show
   // skeletons on the very first load.
   const isRefreshing  = resourcesStatus === "loading" || filters !== debouncedFilters;
@@ -276,11 +306,12 @@ export default function App() {
       },
     };
     TAB_HOTKEYS.forEach((target, i) => {
+      if (!isAuthenticated && CREATOR_TABS.includes(target)) return;
       map[`tab-${target}`] = { key: String(i + 1), handler: () => goTo(target) };
     });
-    if (API_KEY) map.publish = { key: "p", handler: () => setShowPublish(true) };
+    if (isAuthenticated) map.publish = { key: "p", handler: () => setShowPublish(true) };
     return map;
-  }, [activeModal, showPublish, sidebarOpen, toggleTheme, toggleLanguage, goTo]);
+  }, [activeModal, showPublish, sidebarOpen, toggleTheme, toggleLanguage, goTo, isAuthenticated]);
 
   // While the help dialog is open it owns the keyboard (it handles Escape).
   useKeyboardShortcuts(shortcuts, !showShortcutsHelp);
@@ -290,15 +321,17 @@ export default function App() {
     const actions = t("shortcuts.group_actions");
     const help = t("shortcuts.group_help");
     return [
-      ...TAB_HOTKEYS.map((target, i) => ({ keys: String(i + 1), description: t(TAB_SHORTCUT_KEYS[target]), group: nav })),
+      ...TAB_HOTKEYS
+        .filter((target) => isAuthenticated || !CREATOR_TABS.includes(target))
+        .map((target) => ({ keys: String(TAB_HOTKEYS.indexOf(target) + 1), description: t(TAB_SHORTCUT_KEYS[target]), group: nav })),
       { keys: "/", description: t("shortcuts.search"), group: actions },
-      ...(API_KEY ? [{ keys: "P", description: t("shortcuts.publish"), group: actions }] : []),
+      ...(isAuthenticated ? [{ keys: "P", description: t("shortcuts.publish"), group: actions }] : []),
       { keys: "T", description: t("shortcuts.toggle_theme"), group: actions },
       { keys: "L", description: t("shortcuts.toggle_language"), group: actions },
       { keys: "?", description: t("shortcuts.show_shortcuts"), group: help },
       { keys: "Esc", description: t("shortcuts.escape"), group: help },
     ];
-  }, [t]);
+  }, [t, isAuthenticated]);
 
   /* ── Sidebar ─────────────────────────────────────────────────────────── */
   const renderNavItem = (target: Tab) => (
@@ -326,7 +359,7 @@ export default function App() {
         <div className="synapse-nav-label">{t("app.nav_marketplace")}</div>
         {MARKETPLACE_TABS.map(renderNavItem)}
 
-        {API_KEY && (
+        {isAuthenticated && (
           <div className="synapse-nav-group">
             <div className="synapse-nav-label">{t("app.nav_creator")}</div>
             {CREATOR_TABS.map(renderNavItem)}
@@ -380,6 +413,20 @@ export default function App() {
           <span className="font-mono">{shortAddress(wallet.address)}</span>
           <span className="synapse-sr-only">{t("app.copy_address")}</span>
         </button>
+        {isAuthenticated ? (
+          <button className="synapse-icon-btn" onClick={signOut}
+            aria-label={t("app.sign_out")} title={t("app.sign_out")}>
+            <svg width="16" height="16" fill="none" viewBox="0 0 18 18" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7 3H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 13l4-4-4-4M16 9H7"/>
+            </svg>
+          </button>
+        ) : (
+          <button className="synapse-btn synapse-btn--secondary synapse-btn--sm" onClick={() => void signIn()}
+            disabled={signingIn} aria-busy={signingIn || undefined} aria-label={t("app.sign_in")}>
+            {signingIn ? <span className="synapse-spinner" aria-hidden="true" /> : null}
+            <span className="synapse-topbar__label">{t("app.sign_in")}</span>
+          </button>
+        )}
         <button className="synapse-icon-btn" onClick={wallet.disconnect}
           aria-label={t("app.disconnect_wallet")} title={t("app.disconnect_wallet")}>
           <svg width="16" height="16" fill="none" viewBox="0 0 18 18" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -432,7 +479,7 @@ export default function App() {
       </button>
       <h1 className="synapse-topbar__title">{t(TAB_TITLE_KEYS[tab])}</h1>
       <div className="synapse-topbar__actions">
-        {API_KEY && (
+        {isAuthenticated && (
           <button className="synapse-btn synapse-btn--primary synapse-btn--sm" onClick={() => setShowPublish(true)}
             aria-label={t("app.publish")}>
             <svg width="14" height="14" fill="none" viewBox="0 0 18 18" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true"><path d="M9 3v12M3 9h12"/></svg>
@@ -580,17 +627,17 @@ export default function App() {
               <AgentStatusPage />
             </Suspense>
           )}
-          {tab === "dashboard" && API_KEY && (
+          {tab === "dashboard" && isAuthenticated && (
             <Suspense fallback={<LazyFallback label={t("app.loading")} />}>
-              <CreatorDashboard apiKey={API_KEY}
+              <CreatorDashboard apiKey={sessionToken ?? ""}
                 onEditPrice={(r) => setActiveModal({ kind: "editPrice", resource: r as Resource })}
                 onTransferOwnership={(r) => setActiveModal({ kind: "transferOwnership", resource: r as Resource })}
                 onRegister={(r) => setActiveModal({ kind: "register", resource: r as Resource })} />
             </Suspense>
           )}
-          {tab === "analytics" && API_KEY && (
+          {tab === "analytics" && isAuthenticated && (
             <Suspense fallback={<LazyFallback label={t("app.loading")} />}>
-              <AnalyticsDashboard apiKey={API_KEY} />
+              <AnalyticsDashboard apiKey={sessionToken ?? ""} />
             </Suspense>
           )}
           </ErrorBoundary>
@@ -617,27 +664,27 @@ export default function App() {
       {activeModal?.kind === "editPrice" && (
         <Suspense fallback={<LazyModalFallback />}>
           <EditPriceModal resourceId={activeModal.resource.id} currentPrice={activeModal.resource.price}
-            apiKey={API_KEY} onClose={closeModal}
+            apiKey={sessionToken ?? ""} onClose={closeModal}
             onConfirmed={(price) => { applyOverride(activeModal.resource.id, { price }); closeModal(); }} />
         </Suspense>
       )}
       {activeModal?.kind === "transferOwnership" && (
         <Suspense fallback={<LazyModalFallback />}>
-          <TransferOwnershipModal resourceId={activeModal.resource.id} apiKey={API_KEY}
+          <TransferOwnershipModal resourceId={activeModal.resource.id} apiKey={sessionToken ?? ""}
             onClose={closeModal}
             onConfirmed={(addr) => { applyOverride(activeModal.resource.id, { walletAddress: addr }); closeModal(); }} />
         </Suspense>
       )}
       {activeModal?.kind === "register" && (
         <Suspense fallback={<LazyModalFallback />}>
-          <RegisterModal resourceId={activeModal.resource.id} apiKey={API_KEY}
+          <RegisterModal resourceId={activeModal.resource.id} apiKey={sessionToken ?? ""}
             onClose={closeModal}
             onConfirmed={() => { applyOverride(activeModal.resource.id, { onchainStatus: "registered" }); closeModal(); }} />
         </Suspense>
       )}
-      {showPublish && API_KEY && (
+      {showPublish && isAuthenticated && (
         <Suspense fallback={<LazyModalFallback />}>
-          <PublishModal apiKey={API_KEY} onClose={() => setShowPublish(false)}
+          <PublishModal apiKey={sessionToken ?? ""} onClose={() => setShowPublish(false)}
             onPublished={() => retryResources()} />
         </Suspense>
       )}

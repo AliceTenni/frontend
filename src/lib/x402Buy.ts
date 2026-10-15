@@ -22,6 +22,7 @@ const networks: Record<string, NetworkPreset> = {
 import { explorerTxUrl } from "./stellarExplorer.js";
 import { freighterErrorMessage } from "./freighter.js";
 import { STELLAR_NETWORK } from "./config.js";
+import { safeExternalUrl } from "./safeExternalUrl.js";
 
 /** Resolve the deployment network the web app targets (defaults to testnet). */
 function resolveNetworkPreset(): NetworkPreset {
@@ -183,7 +184,12 @@ export async function purchaseResource(
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     const body = await res.json();
-    return { url: body?.url, receipt: body?.receipt, txHash, explorerUrl };
+    return {
+      url: safeExternalUrl(body?.url) ?? undefined,
+      receipt: body?.receipt,
+      txHash,
+      explorerUrl,
+    };
   }
 
   // File resource: hand back a downloadable object URL.

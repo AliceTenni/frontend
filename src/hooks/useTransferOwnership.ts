@@ -14,6 +14,9 @@ export function useTransferOwnership(resourceId: string, apiKey: string) {
   async function transferOwnership(newCreator: string) {
     setError(null);
     setNetworkWarning(null);
+    // Generate one idempotency key per transfer attempt and reuse it for
+    // both the prepare and submit calls so retries are deduplicated.
+    const idempotencyKey = crypto.randomUUID();
     try {
       // Step 1 — fetch unsigned XDR from the server
       setStatus("preparing");
@@ -21,6 +24,7 @@ export function useTransferOwnership(resourceId: string, apiKey: string) {
         resourceId,
         newCreator,
         apiKey,
+        idempotencyKey,
       );
 
       // Step 1b — warn if wallet is on the wrong network (non-blocking)
@@ -37,7 +41,13 @@ export function useTransferOwnership(resourceId: string, apiKey: string) {
 
       // Step 3 — submit signed XDR and sync DB owner
       setStatus("submitting");
-      const updated = await submitTransferOwnership(resourceId, signedXdr, newCreator, apiKey);
+      const updated = await submitTransferOwnership(
+        resourceId,
+        signedXdr,
+        newCreator,
+        apiKey,
+        idempotencyKey,
+      );
       setNewOwner(updated.newCreator);
       setStatus("confirmed");
     } catch (err) {

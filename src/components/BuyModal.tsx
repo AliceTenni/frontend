@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useBuyResource } from "../hooks/useBuyResource.js";
 import { FREIGHTER_INSTALL_URL } from "../lib/freighter.js";
+import { safeExternalUrl } from "../lib/safeExternalUrl.js";
 import { formatPrice, shortAddress } from "./ResourceCard.js";
 
 interface BuyModalProps {
@@ -45,6 +46,7 @@ export function BuyModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const displayPrice = formatPrice(price);
+  const safeResultUrl = result?.url ? safeExternalUrl(result.url) : null;
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement as HTMLElement;
@@ -188,10 +190,16 @@ export function BuyModal({
                 Payment successful
               </div>
 
-              {result.url && (
-                <a href={result.url} target="_blank" rel="noopener noreferrer" className="synapse-btn synapse-btn--primary w-full">
+              {safeResultUrl ? (
+                <a href={safeResultUrl} target="_blank" rel="noopener noreferrer" className="synapse-btn synapse-btn--primary w-full">
                   Open resource ↗
                 </a>
+              ) : (
+                result.url && (
+                  <p className="text-xs text-fg-subtle">
+                    The resource link could not be opened safely.
+                  </p>
+                )
               )}
 
               {result.download && (

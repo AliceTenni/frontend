@@ -19,6 +19,7 @@ export function RegisterModal({ resourceId, apiKey, onClose, onConfirmed }: Regi
   const [txHash, setTxHash] = useState<string>("");
   const [unsignedXdr, setUnsignedXdr] = useState<string>("");
   const [networkPassphrase, setNetworkPassphrase] = useState<string>("");
+  const [idempotencyKey, setIdempotencyKey] = useState<string>("");
 
   // Prepare once on open; retries call prepareTransaction() explicitly.
   React.useEffect(() => {
@@ -26,13 +27,22 @@ export function RegisterModal({ resourceId, apiKey, onClose, onConfirmed }: Regi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function generateIdempotencyKey(): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
   async function prepareTransaction() {
     try {
       setState("preparing");
       setError("");
       setNextSteps([]);
       setFailedTxHash("");
-      const result = await prepareRegisterTx(resourceId, apiKey);
+      const key = idempotencyKey || generateIdempotencyKey();
+      setIdempotencyKey(key);
+      const result = await prepareRegisterTx(resourceId, apiKey, key);
       setUnsignedXdr(result.unsignedXdr);
       setNetworkPassphrase(result.networkPassphrase);
       setState("signing");
@@ -53,7 +63,7 @@ export function RegisterModal({ resourceId, apiKey, onClose, onConfirmed }: Regi
       const signedXdr = await signWithFreighter(unsignedXdr, networkPassphrase);
 
       // Submit the signed transaction
-      const result = await submitRegisterTx(resourceId, signedXdr, apiKey);
+      const result = await submitRegisterTx(resourceId, signedXdr, apiKey, idempotencyKey);
       setTxHash(result.txHash);
       setState("success");
       onConfirmed(result.txHash);
