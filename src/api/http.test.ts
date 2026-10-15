@@ -99,6 +99,26 @@ describe("getJson", () => {
     const err = await failure(getJson("/agent/status", "Failed to load agent status", undefined, hasKeys("agent", "stats")));
     expect(err.message).toMatch(/unexpected response/);
   });
+
+  it.each([
+    ["/", "%2F"],
+    ["?", "%3F"],
+    ["#", "%23"],
+    [" ", "%20"],
+  ])("percent-encodes %j in the request path", async (char, encoded) => {
+    respond(JSON.stringify([]));
+    await getJson(`/resources/${char}/meta`, "Failed");
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain(encoded);
+    expect(String(url)).not.toContain(`/resources/${char}/meta`);
+  });
+
+  it("encodes multiple special characters without double-encoding", async () => {
+    respond(JSON.stringify([]));
+    await getJson("/resources/a b/c?d#e/meta", "Failed");
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain("/resources/a%20b%2Fc%3Fd%23e/meta");
+  });
 });
 
 describe("signed publish requests", () => {
