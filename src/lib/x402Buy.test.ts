@@ -73,6 +73,30 @@ describe("purchaseResource (#219)", () => {
     expect(result.explorerUrl).toBeUndefined();
   });
 
+  it("drops a javascript: url from the response", async () => {
+    paidFetch.mockResolvedValue(response({ url: "javascript:alert(1)" }));
+
+    const result = await purchaseResource("https://api/resources/r1", "GBUYER");
+
+    expect(result.url).toBeUndefined();
+  });
+
+  it("drops a data: url from the response", async () => {
+    paidFetch.mockResolvedValue(response({ url: "data:text/html,<script>alert(1)</script>" }));
+
+    const result = await purchaseResource("https://api/resources/r1", "GBUYER");
+
+    expect(result.url).toBeUndefined();
+  });
+
+  it("passes an https url through unchanged", async () => {
+    paidFetch.mockResolvedValue(response({ url: "https://example.com/data" }));
+
+    const result = await purchaseResource("https://api/resources/r1", "GBUYER");
+
+    expect(result.url).toBe("https://example.com/data");
+  });
+
   it("throws an actionable PurchaseError with the HTTP status on failure", async () => {
     paidFetch.mockResolvedValue(
       response({ error: "insufficient funds" }, { ok: false, status: 402 }),
