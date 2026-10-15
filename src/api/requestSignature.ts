@@ -94,7 +94,7 @@ export async function signedPublisherFetch(
 
   const headers = new Headers(init.headers);
   headers.set("x-api-key", apiKey);
-  if (body) {
+  if (typeof init.body === "string" || (init.body == null && !headers.has("Content-Type"))) {
     headers.set("Content-Type", "application/json");
   }
   headers.set("X-Timestamp", signatureHeaders["X-Timestamp"]);
