@@ -1,6 +1,10 @@
 /**
  * Build-time configuration, read once from Vite env vars.
  * See .env.example for the full list.
+ *
+ * SECURITY: Never expose secrets (API keys, private keys, tokens) through
+ * `VITE_*` variables. Vite inlines these values into the client bundle, so
+ * anything read here is publicly visible. Secrets must live server-side only.
  */
 
 /**

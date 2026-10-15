@@ -221,9 +221,8 @@ export async function publishFileResource(
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const res = await apiFetch("/resources", {
+  const res = await signedFetch("/resources", apiKey, {
     method: "POST",
-    headers: { "x-api-key": apiKey },
     body: formData,
     signal,
   });

@@ -1,6 +1,6 @@
 /**
- * HMAC-SHA256 request signing for publisher mutations.
- * Mirrors server/src/utils/requestSignature.ts — keep in sync when changing the scheme.
+ * Authenticated publisher requests.
+ * Requests are authenticated via the Authorization header (session token).
  */
 
 import { apiFetch, networkFetch, readJson } from "./http.js";
@@ -76,10 +76,28 @@ export async function signPublisherRequestHeaders(params: {
  * API key. All authenticated calls should route through this helper.
  */
 export async function signedPublisherRequest(
+ * Resolve the publisher API key at runtime from the session/auth endpoint.
+ * The key is never baked into the bundle at build time.
+ */
+export async function getPublisherApiKey(): Promise<string> {
+  const res = await networkFetch("/api/session/api-key", { method: "GET" });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch publisher API key: ${res.status}`);
+  }
+  const data = (await res.json()) as { apiKey?: string };
+  if (!data.apiKey) {
+    throw new Error("Publisher API key missing from session response");
+  }
+  return data.apiKey;
+}
+
+/** Authenticated JSON fetch with optional request signing headers. */
+/** Authenticated JSON fetch relying on the Authorization header. */
+export async function signedPublisherFetch(
   url: string,
-  apiKey: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  const apiKey = await getPublisherApiKey();
   const method = (init.method ?? "GET").toUpperCase();
   const body = typeof init.body === "string" ? init.body : undefined;
   const parsed = new URL(url);
@@ -101,8 +119,6 @@ export async function signedPublisherRequest(
   if (body) {
     headers.set("Content-Type", "application/json");
   }
-  headers.set("X-Timestamp", signatureHeaders["X-Timestamp"]);
-  headers.set("X-Signature", signatureHeaders["X-Signature"]);
 
   return apiFetch(url, { ...init, headers });
 }

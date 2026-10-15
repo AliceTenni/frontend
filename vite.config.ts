@@ -3,7 +3,13 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { visualizer } from "rollup-plugin-visualizer";
 
-/** Backend route groups (see SynapsVault/backend src/routes). */
+/**
+ * Backend route groups (see SynapsVault/backend src/routes).
+ *
+ * The dev server forwards these to the backend, which is responsible for
+ * injecting/validating the API key. The key is NOT read from Vite env vars
+ * (no VITE_API_KEY) — it never belongs in client-side configuration.
+ */
 const API_PROXY_PATTERN = "^/(resources|agent|registry|publishers|buyers|payments)(/|\\?|$)";
 
 export default defineConfig(({ mode }) => {
@@ -143,6 +149,7 @@ export default defineConfig(({ mode }) => {
       strictPort: false, // Fall back to next available port
       // With VITE_API_URL unset the app calls same-origin paths; forward every
       // backend route group so none of them fall through to index.html.
+      // The proxy/backend injects the API key; Vite env vars carry no secret.
       proxy: {
         [API_PROXY_PATTERN]: {
           target: devProxyTarget,
