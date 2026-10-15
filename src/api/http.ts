@@ -46,6 +46,28 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * Supplies the current session token (or null when signed out). Registered by
+ * session.ts so this module stays free of auth-state imports.
+ */
+export type TokenProvider = () => string | null;
+
+let tokenProvider: TokenProvider | null = null;
+
+/** Register the session token provider used to authorize API requests. */
+export function setTokenProvider(provider: TokenProvider | null): void {
+  tokenProvider = provider;
+}
+
+/** Merge the Authorization header into `init` when a session token exists. */
+function withAuth(init?: RequestInit): RequestInit | undefined {
+  const token = tokenProvider?.() ?? null;
+  if (!token) return init;
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
+}
+
+/**
  * fetch() that turns network failures (backend down, DNS, CORS) into an
  * "unreachable" ApiError. Abort errors are rethrown untouched so callers can
  * ignore them.
@@ -61,7 +83,7 @@ export async function networkFetch(url: string, init?: RequestInit): Promise<Res
 
 /** networkFetch against a backend path like "/resources". */
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return networkFetch(apiUrl(path), init);
+  return networkFetch(apiUrl(path), withAuth(init));
 }
 
 function isHtml(res: Response): boolean {
