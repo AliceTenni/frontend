@@ -70,12 +70,28 @@ export async function signPublisherRequestHeaders(params: {
   };
 }
 
+/**
+ * Resolve the publisher API key at runtime from the session/auth endpoint.
+ * The key is never baked into the bundle at build time.
+ */
+export async function getPublisherApiKey(): Promise<string> {
+  const res = await networkFetch("/api/session/api-key", { method: "GET" });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch publisher API key: ${res.status}`);
+  }
+  const data = (await res.json()) as { apiKey?: string };
+  if (!data.apiKey) {
+    throw new Error("Publisher API key missing from session response");
+  }
+  return data.apiKey;
+}
+
 /** Authenticated JSON fetch with optional request signing headers. */
 export async function signedPublisherFetch(
   url: string,
-  apiKey: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  const apiKey = await getPublisherApiKey();
   const method = (init.method ?? "GET").toUpperCase();
   const body = typeof init.body === "string" ? init.body : undefined;
   const path = new URL(url).pathname + new URL(url).search;
