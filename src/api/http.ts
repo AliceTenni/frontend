@@ -64,6 +64,15 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * Authentication headers for backend requests. Requests authenticate solely
+ * via the x-api-key header (or a session token) over TLS; no client-computed
+ * signature or timestamp headers are attached.
+ */
+export function authHeaders(apiKey: string): Record<string, string> {
+  return { "x-api-key": apiKey };
+}
+
+/**
  * Supplies the current session token (or null when signed out). Registered by
  * session.ts so this module stays free of auth-state imports.
  */
@@ -114,8 +123,7 @@ function withSigningHeaders(init?: RequestInit): RequestInit | undefined {
 
 /** networkFetch against a backend path like "/resources". */
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return networkFetch(apiUrl(path), withSigningHeaders(init));
-  return networkFetch(apiUrl(path), withAuth(init));
+  return networkFetch(apiUrl(path), withAuth(withSigningHeaders(init)));
 }
 
 function isHtml(res: Response): boolean {

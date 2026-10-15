@@ -1,5 +1,4 @@
-import { signedPublisherFetch } from "./requestSignature.js";
-import { apiFetch, apiUrl, getJson, isArray, readJson } from "./http.js";
+import { apiFetch, getJson, isArray, readJson } from "./http.js";
 
 export interface Resource {
   id: string;
@@ -15,9 +14,11 @@ export interface Resource {
   accessUrl: string;
 }
 
-/** Signed publisher request against a backend path like "/resources/1/price". */
+/** Authenticated publisher request against a backend path like "/resources/1/price". */
 function signedFetch(path: string, apiKey: string, init: RequestInit): Promise<Response> {
-  return signedPublisherFetch(apiUrl(path), apiKey, init);
+  const headers = new Headers(init.headers);
+  headers.set("x-api-key", apiKey);
+  return apiFetch(path, { ...init, headers });
 }
 
 /** Adds an `Idempotency-Key` header (when provided) so it is included in the signature. */
