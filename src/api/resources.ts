@@ -207,6 +207,15 @@ export async function publishLinkResource(
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
+  let scheme: string;
+  try {
+    scheme = new URL(data.externalUrl).protocol;
+  } catch {
+    throw new Error("External URL must be a valid URL");
+  }
+  if (scheme !== "http:" && scheme !== "https:") {
+    throw new Error("External URL must use http or https");
+  }
   const res = await apiFetch("/resources", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey },
