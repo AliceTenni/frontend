@@ -111,6 +111,36 @@ const cycle = findCycle();
 if (cycle) fail(`Circular import between chunks: ${cycle.join(" -> ")}`);
 else console.log("No circular imports between chunks.");
 
+// ── Secret scan ───────────────────────────────────────────────────────────
+// Guard against a build-time secret (e.g. an API key) being inlined into a
+// shipped chunk. The pattern is configurable via SECRET_SCAN_PATTERN; when
+// unset, a default set of known secret values is scanned for.
+const DEFAULT_SECRET_PATTERNS = [
+  // Known secret value(s) that must never reach the client bundle.
+  "sk_live_",
+  "SUPABASE_SERVICE_ROLE_KEY",
+];
+
+const secretPatterns = process.env.SECRET_SCAN_PATTERN
+  ? [process.env.SECRET_SCAN_PATTERN]
+  : DEFAULT_SECRET_PATTERNS;
+
+const secretHits = [];
+for (const { name } of chunks) {
+  const code = readFileSync(join(ASSETS, name), "utf8");
+  for (const pattern of secretPatterns) {
+    if (pattern && code.includes(pattern)) {
+      secretHits.push(`${name} contains secret pattern "${pattern}"`);
+    }
+  }
+}
+
+if (secretHits.length > 0) {
+  for (const hit of secretHits) fail(`Secret leaked into shipped chunk: ${hit}`);
+} else {
+  console.log("No secrets found in shipped chunks.");
+}
+
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(
     process.env.GITHUB_STEP_SUMMARY,
