@@ -46,6 +46,15 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * Authentication headers for backend requests. Requests authenticate solely
+ * via the x-api-key header (or a session token) over TLS; no client-computed
+ * signature or timestamp headers are attached.
+ */
+export function authHeaders(apiKey: string): Record<string, string> {
+  return { "x-api-key": apiKey };
+}
+
+/**
  * fetch() that turns network failures (backend down, DNS, CORS) into an
  * "unreachable" ApiError. Abort errors are rethrown untouched so callers can
  * ignore them.

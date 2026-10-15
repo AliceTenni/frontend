@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { ApiError, getJson, isArray, hasKeys } from "./http.js";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { ApiError, getJson, isArray, hasKeys, buildAuthHeaders } from "./http.js";
 
 function respond(body: string, { status = 200, type = "application/json" } = {}) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status, headers: { "content-type": type } })));
@@ -66,5 +68,54 @@ describe("getJson", () => {
     respond(JSON.stringify({ unexpected: true }));
     const err = await failure(getJson("/agent/status", "Failed to load agent status", undefined, hasKeys("agent", "stats")));
     expect(err.message).toMatch(/unexpected response/);
+  });
+});
+
+describe("client-side request signing", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("does not attach a client-generated signature or timestamp header", () => {
+    const headers = buildAuthHeaders("test-token");
+    expect(headers).not.toHaveProperty("X-Signature");
+    expect(headers).not.toHaveProperty("X-Timestamp");
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain("x-signature");
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain("x-timestamp");
+  });
+
+  it("sends no signature headers on the wire", async () => {
+    respond(JSON.stringify([]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.has("X-Signature")).toBe(false);
+    expect(headers.has("X-Timestamp")).toBe(false);
+  });
+
+  it("embeds no HMAC secret or signing logic in the shipped bundle", () => {
+    const roots = ["src", "dist"].map((p) => join(process.cwd(), p));
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      let entries: string[];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry)) files.push(full);
+      }
+    };
+    roots.forEach(walk);
+
+    const offenders = files.filter((file) => {
+      if (file.endsWith("http.test.ts")) return false;
+      const source = readFileSync(file, "utf8");
+      return /X-Signature|X-Timestamp|createHmac|HMAC_SECRET|SIGNING_SECRET/.test(source);
+    });
+
+    expect(offenders).toEqual([]);
   });
 });
