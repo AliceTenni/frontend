@@ -242,6 +242,6 @@ export async function submitSetPrice(
   apiKey: string,
 ): Promise<{ id: string; price: string; status: string }> {
   const body = JSON.stringify({ signedXdr, price });
-  const res = await signedFetch(`/resources/${resourceId}/price`, apiKey, { method: "POST", body });
+  const res = await signedFetch(`/resources/${encodePathSegment(resourceId)}/price`, apiKey, { method: "POST", body });
   return readJson(res, "Failed to submit transaction");
 }
