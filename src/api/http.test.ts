@@ -1,4 +1,14 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  ApiError,
+  getJson,
+  isArray,
+  hasKeys,
+  hashRequestBody,
+  signPublisherRequestHeaders,
+  signedPublisherFetch,
+  EMPTY_BODY_HASH,
+} from "./http.js";
 import { ApiError, getJson, isArray, hasKeys, publishLinkResource, publishFileResource } from "./http.js";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { ApiError, getJson, isArray, hasKeys } from "./http.js";
@@ -157,5 +167,101 @@ describe("signed publish requests", () => {
     expect(headers["x-api-key"]).toBe("key-123");
     expect(headers["X-Timestamp"]).toBeTruthy();
     expect(headers["X-Signature"]).toBeTruthy();
+  });
+});
+
+describe("hashRequestBody", () => {
+  it("hashes a string body as its UTF-8 bytes", async () => {
+    const expected = await crypto.subtle
+      .digest("SHA-256", new TextEncoder().encode("hello"))
+      .then((buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join(""));
+    await expect(hashRequestBody("hello")).resolves.toBe(expected);
+  });
+
+  it("hashes an empty string to EMPTY_BODY_HASH", async () => {
+    await expect(hashRequestBody("")).resolves.toBe(EMPTY_BODY_HASH);
+  });
+
+  it("hashes null and undefined to EMPTY_BODY_HASH", async () => {
+    await expect(hashRequestBody(null)).resolves.toBe(EMPTY_BODY_HASH);
+    await expect(hashRequestBody(undefined)).resolves.toBe(EMPTY_BODY_HASH);
+  });
+
+  it("hashes a Blob's bytes and differs from the empty-body hash", async () => {
+    const blob = new Blob(["hello"], { type: "text/plain" });
+    const hash = await hashRequestBody(blob);
+    expect(hash).not.toBe(EMPTY_BODY_HASH);
+    const expected = await crypto.subtle
+      .digest("SHA-256", new TextEncoder().encode("hello"))
+      .then((buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join(""));
+    expect(hash).toBe(expected);
+  });
+
+  it("hashes URLSearchParams by its serialized form", async () => {
+    const params = new URLSearchParams({ a: "1", b: "two" });
+    const hash = await hashRequestBody(params);
+    const expected = await hashRequestBody(params.toString());
+    expect(hash).toBe(expected);
+    expect(hash).not.toBe(EMPTY_BODY_HASH);
+  });
+
+  it("hashes equivalent FormData instances deterministically", async () => {
+    const make = () => {
+      const fd = new FormData();
+      fd.append("name", "value");
+      fd.append("file", new Blob(["file-bytes"], { type: "application/octet-stream" }), "file.bin");
+      return fd;
+    };
+    const a = await hashRequestBody(make());
+    const b = await hashRequestBody(make());
+    expect(a).toBe(b);
+    expect(a).not.toBe(EMPTY_BODY_HASH);
+  });
+
+  it("throws a clear error for unsupported body types", async () => {
+    await expect(hashRequestBody({ foo: "bar" })).rejects.toThrow(/unsupported/i);
+    await expect(hashRequestBody(new ReadableStream())).rejects.toThrow(/unsupported/i);
+  });
+});
+
+describe("signPublisherRequestHeaders / signedPublisherFetch", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("forwards a Blob body unchanged and does not set a JSON content type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const blob = new Blob(["hello"], { type: "text/plain" });
+
+    await signedPublisherFetch("/publishers/me/resources", { method: "POST", body: blob });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/publishers/me/resources");
+    expect(init.body).toBe(blob);
+    const headers = new Headers(init.headers);
+    expect(headers.get("content-type")).not.toBe("application/json");
+  });
+
+  it("forwards a FormData body unchanged and does not set a JSON content type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const fd = new FormData();
+    fd.append("name", "value");
+    fd.append("file", new Blob(["file-bytes"]), "file.bin");
+
+    await signedPublisherFetch("/publishers/me/resources", { method: "POST", body: fd });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(fd);
+    const headers = new Headers(init.headers);
+    expect(headers.get("content-type")).not.toBe("application/json");
+  });
+
+  it("signPublisherRequestHeaders returns headers without a JSON content type for a Blob body", async () => {
+    const blob = new Blob(["hello"], { type: "text/plain" });
+    const headers = await signPublisherRequestHeaders({ method: "POST", body: blob });
+    const h = new Headers(headers);
+    expect(h.get("content-type")).not.toBe("application/json");
   });
 });

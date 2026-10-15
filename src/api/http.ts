@@ -91,6 +91,7 @@ function withAuth(init?: RequestInit): RequestInit | undefined {
  * ignore them.
  */
 export async function networkFetch(url: string, init?: RequestInit): Promise<Response> {
+  // `init` (including any signed request body) is forwarded to fetch unchanged.
   try {
     return await fetch(url, init);
   } catch (err) {
