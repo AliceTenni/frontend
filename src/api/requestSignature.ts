@@ -75,14 +75,16 @@ export async function signedPublisherFetch(
   url: string,
   apiKey: string,
   init: RequestInit = {},
+  options: { idempotencyKey?: string } = {},
 ): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const body = typeof init.body === "string" ? init.body : undefined;
   const path = new URL(url).pathname + new URL(url).search;
   const idempotencyKey =
-    init.headers instanceof Headers
+    options.idempotencyKey ??
+    (init.headers instanceof Headers
       ? (init.headers.get("Idempotency-Key") ?? undefined)
-      : (init.headers as Record<string, string> | undefined)?.["Idempotency-Key"];
+      : (init.headers as Record<string, string> | undefined)?.["Idempotency-Key"]);
 
   const signatureHeaders = await signPublisherRequestHeaders({
     apiKey,
@@ -96,6 +98,9 @@ export async function signedPublisherFetch(
   headers.set("x-api-key", apiKey);
   if (body) {
     headers.set("Content-Type", "application/json");
+  }
+  if (idempotencyKey) {
+    headers.set("Idempotency-Key", idempotencyKey);
   }
   headers.set("X-Timestamp", signatureHeaders["X-Timestamp"]);
   headers.set("X-Signature", signatureHeaders["X-Signature"]);

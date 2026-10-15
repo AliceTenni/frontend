@@ -26,11 +26,17 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
     setStep("submitting");
     setErrorMsg("");
 
+    const idempotencyKey =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
     try {
       if (publishType === "link") {
         await publishLinkResource(
           { title, description: description || undefined, price, externalUrl },
           apiKey,
+          idempotencyKey,
         );
       } else {
         if (!file) throw new Error("Please select a file to upload before publishing.");
@@ -39,7 +45,7 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
         if (description) formData.append("description", description);
         formData.append("price", price);
         formData.append("file", file);
-        await publishFileResource(formData, apiKey);
+        await publishFileResource(formData, apiKey, idempotencyKey);
       }
       setStep("success");
       onPublished();
