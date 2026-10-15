@@ -9,8 +9,12 @@ export interface PaymentReceipt {
   paidAt: string;
 }
 
+function receiptPath(paymentId: string): string {
+  return `/payments/${encodeURIComponent(paymentId)}/receipt`;
+}
+
 export async function fetchReceipt(paymentId: string): Promise<PaymentReceipt> {
-  return getJson<PaymentReceipt>(`/payments/${paymentId}/receipt`, "Failed to load receipt");
+  return getJson<PaymentReceipt>(receiptPath(paymentId), "Failed to load receipt");
 }
 
 export async function fetchBuyerPayments(address: string): Promise<PaymentReceipt[]> {
@@ -24,5 +28,5 @@ export async function fetchBuyerPayments(address: string): Promise<PaymentReceip
 
 /** Public URL of a payment receipt, for linking. */
 export function receiptUrl(paymentId: string): string {
-  return apiUrl(`/payments/${paymentId}/receipt`);
+  return apiUrl(receiptPath(paymentId));
 }

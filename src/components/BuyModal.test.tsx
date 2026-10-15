@@ -92,6 +92,66 @@ describe("BuyModal", () => {
     ).toHaveAttribute("href", "https://stellar.expert/explorer/testnet/tx/abc");
   });
 
+  it("does not render an anchor for a javascript: URL in the success result", () => {
+    vi.mocked(useBuyResource).mockReturnValue({
+      status: "success",
+      result: {
+        url: "javascript:alert(document.cookie)",
+        explorerUrl: "https://stellar.expert/explorer/testnet/tx/abc",
+      },
+      error: null,
+      buy: mockBuy,
+      reset: mockReset,
+    });
+
+    render(<BuyModal {...defaultProps} walletAddress="GWALLET123" />);
+
+    expect(screen.getByText(/payment successful/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open resource/i })).not.toBeInTheDocument();
+    expect(
+      document.querySelector('a[href^="javascript:"]'),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not render an anchor for a data: URL in the success result", () => {
+    vi.mocked(useBuyResource).mockReturnValue({
+      status: "success",
+      result: {
+        url: "data:text/html,<script>alert(1)</script>",
+        explorerUrl: "https://stellar.expert/explorer/testnet/tx/abc",
+      },
+      error: null,
+      buy: mockBuy,
+      reset: mockReset,
+    });
+
+    render(<BuyModal {...defaultProps} walletAddress="GWALLET123" />);
+
+    expect(screen.getByText(/payment successful/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open resource/i })).not.toBeInTheDocument();
+    expect(document.querySelector('a[href^="data:"]')).not.toBeInTheDocument();
+  });
+
+  it("renders the 'Open resource' link for a valid https URL", () => {
+    vi.mocked(useBuyResource).mockReturnValue({
+      status: "success",
+      result: {
+        url: "https://example.com/resource",
+        explorerUrl: "https://stellar.expert/explorer/testnet/tx/abc",
+      },
+      error: null,
+      buy: mockBuy,
+      reset: mockReset,
+    });
+
+    render(<BuyModal {...defaultProps} walletAddress="GWALLET123" />);
+
+    expect(screen.getByRole("link", { name: /open resource/i })).toHaveAttribute(
+      "href",
+      "https://example.com/resource",
+    );
+  });
+
   it("shows error state with retry", async () => {
     vi.mocked(useBuyResource).mockReturnValue({
       status: "error",

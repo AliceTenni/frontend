@@ -73,6 +73,90 @@ describe("PublishModal", () => {
     expect(onPublished).not.toHaveBeenCalled();
   });
 
+  it("rejects a javascript: URL with an inline error and does not publish", async () => {
+    const user = userEvent.setup();
+
+    render(<PublishModal apiKey={apiKey} onClose={onClose} onPublished={onPublished} />);
+
+    await user.type(screen.getByLabelText(/title/i), "My Dataset");
+    await user.type(screen.getByLabelText(/price/i), "0.50");
+    await user.type(screen.getByLabelText(/external url/i), "javascript:alert(1)");
+    await user.click(screen.getByRole("button", { name: /^publish$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/must be a valid http\(s\) url/i)).toBeInTheDocument();
+    });
+    expect(publishLinkResource).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+  });
+
+  it("rejects a data: URL with an inline error and does not publish", async () => {
+    const user = userEvent.setup();
+
+    render(<PublishModal apiKey={apiKey} onClose={onClose} onPublished={onPublished} />);
+
+    await user.type(screen.getByLabelText(/title/i), "My Dataset");
+    await user.type(screen.getByLabelText(/price/i), "0.50");
+    await user.type(screen.getByLabelText(/external url/i), "data:text/html,<script>alert(1)</script>");
+    await user.click(screen.getByRole("button", { name: /^publish$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/must be a valid http\(s\) url/i)).toBeInTheDocument();
+    });
+    expect(publishLinkResource).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid http URL and submits successfully", async () => {
+    vi.mocked(publishLinkResource).mockResolvedValue({ id: "res-2" });
+    const user = userEvent.setup();
+
+    render(<PublishModal apiKey={apiKey} onClose={onClose} onPublished={onPublished} />);
+
+    await user.type(screen.getByLabelText(/title/i), "My Dataset");
+    await user.type(screen.getByLabelText(/price/i), "0.50");
+    await user.type(screen.getByLabelText(/external url/i), "http://example.com/data.csv");
+    await user.click(screen.getByRole("button", { name: /^publish$/i }));
+
+    await waitFor(() => {
+      expect(publishLinkResource).toHaveBeenCalledWith(
+        {
+          title: "My Dataset",
+          description: undefined,
+          price: "0.50",
+          externalUrl: "http://example.com/data.csv",
+        },
+        apiKey,
+      );
+    });
+    expect(onPublished).toHaveBeenCalled();
+  });
+
+  it("accepts a valid https URL and submits successfully", async () => {
+    vi.mocked(publishLinkResource).mockResolvedValue({ id: "res-3" });
+    const user = userEvent.setup();
+
+    render(<PublishModal apiKey={apiKey} onClose={onClose} onPublished={onPublished} />);
+
+    await user.type(screen.getByLabelText(/title/i), "My Dataset");
+    await user.type(screen.getByLabelText(/price/i), "0.50");
+    await user.type(screen.getByLabelText(/external url/i), "https://example.com/data.csv");
+    await user.click(screen.getByRole("button", { name: /^publish$/i }));
+
+    await waitFor(() => {
+      expect(publishLinkResource).toHaveBeenCalledWith(
+        {
+          title: "My Dataset",
+          description: undefined,
+          price: "0.50",
+          externalUrl: "https://example.com/data.csv",
+        },
+        apiKey,
+      );
+    });
+    expect(onPublished).toHaveBeenCalled();
+  });
+
   it("closes when cancel is clicked", async () => {
     const user = userEvent.setup();
     render(<PublishModal apiKey={apiKey} onClose={onClose} onPublished={onPublished} />);

@@ -71,12 +71,8 @@ export async function fetchCatalog(filters?: CatalogFilters): Promise<unknown[]>
 
 /** Resources owned by the API key holder. Callers supply the row shape. */
 export async function fetchMyResources<T = unknown>(apiKey: string): Promise<T[]> {
-  return getJson<T[]>(
-    "/publishers/me/resources",
-    "Failed to fetch your resources",
-    { headers: { "x-api-key": apiKey } },
-    isArray,
-  );
+  const res = await signedFetch("/publishers/me/resources", apiKey, { method: "GET" });
+  return readJson(res, "Failed to fetch your resources", isArray);
 }
 
 export async function prepareRegisterTx(
@@ -93,9 +89,8 @@ export async function prepareRegisterTx(
     description?: string;
   };
 }> {
-  return getJson(`/resources/${resourceId}/register/prepare`, "Failed to prepare register transaction", {
-    headers: { "x-api-key": apiKey },
-  });
+  const res = await signedFetch(`/resources/${resourceId}/register/prepare`, apiKey, { method: "GET" });
+  return readJson(res, "Failed to prepare register transaction");
 }
 
 /**
@@ -235,6 +230,15 @@ export async function publishLinkResource(
   signal?: AbortSignal,
   idempotencyKey?: string,
 ): Promise<unknown> {
+  let scheme: string;
+  try {
+    scheme = new URL(data.externalUrl).protocol;
+  } catch {
+    throw new Error("External URL must be a valid URL");
+  }
+  if (scheme !== "http:" && scheme !== "https:") {
+    throw new Error("External URL must use http or https");
+  }
   const res = await apiFetch("/resources", {
     method: "POST",
     headers: withIdempotencyKey({ "Content-Type": "application/json", "x-api-key": apiKey }, idempotencyKey),
@@ -250,7 +254,7 @@ export async function publishFileResource(
   signal?: AbortSignal,
   idempotencyKey?: string,
 ): Promise<unknown> {
-  const res = await apiFetch("/resources", {
+  const res = await signedFetch("/resources", apiKey, {
     method: "POST",
     headers: withIdempotencyKey({ "x-api-key": apiKey }, idempotencyKey),
     body: formData,
@@ -272,5 +276,6 @@ export async function submitSetPrice(
     headers: withIdempotencyKey({}, idempotencyKey),
     body,
   });
+  const res = await signedFetch(`/resources/${encodePathSegment(resourceId)}/price`, apiKey, { method: "POST", body });
   return readJson(res, "Failed to submit transaction");
 }

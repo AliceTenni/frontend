@@ -1,9 +1,9 @@
 /**
- * HMAC-SHA256 request signing for publisher mutations.
- * Mirrors server/src/utils/requestSignature.ts — keep in sync when changing the scheme.
+ * Authenticated publisher requests.
+ * Requests are authenticated via the Authorization header (session token).
  */
 
-import { networkFetch } from "./http.js";
+import { apiFetch, networkFetch, readJson } from "./http.js";
 
 export const EMPTY_BODY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -70,16 +70,39 @@ export async function signPublisherRequestHeaders(params: {
   };
 }
 
+/**
+ * Shared authenticated request helper. Signs every authenticated request
+ * (reads and writes) via signPublisherRequestHeaders and never sends the raw
+ * API key. All authenticated calls should route through this helper.
+ */
+export async function signedPublisherRequest(
+ * Resolve the publisher API key at runtime from the session/auth endpoint.
+ * The key is never baked into the bundle at build time.
+ */
+export async function getPublisherApiKey(): Promise<string> {
+  const res = await networkFetch("/api/session/api-key", { method: "GET" });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch publisher API key: ${res.status}`);
+  }
+  const data = (await res.json()) as { apiKey?: string };
+  if (!data.apiKey) {
+    throw new Error("Publisher API key missing from session response");
+  }
+  return data.apiKey;
+}
+
 /** Authenticated JSON fetch with optional request signing headers. */
+/** Authenticated JSON fetch relying on the Authorization header. */
 export async function signedPublisherFetch(
   url: string,
-  apiKey: string,
   init: RequestInit = {},
   options: { idempotencyKey?: string } = {},
 ): Promise<Response> {
+  const apiKey = await getPublisherApiKey();
   const method = (init.method ?? "GET").toUpperCase();
   const body = typeof init.body === "string" ? init.body : undefined;
-  const path = new URL(url).pathname + new URL(url).search;
+  const parsed = new URL(url);
+  const path = parsed.pathname + parsed.search;
   const idempotencyKey =
     options.idempotencyKey ??
     (init.headers instanceof Headers
@@ -96,6 +119,7 @@ export async function signedPublisherFetch(
 
   const headers = new Headers(init.headers);
   headers.set("x-api-key", apiKey);
+  if (typeof init.body === "string" || (init.body == null && !headers.has("Content-Type"))) {
   if (body) {
     headers.set("Content-Type", "application/json");
   }
@@ -105,5 +129,27 @@ export async function signedPublisherFetch(
   headers.set("X-Timestamp", signatureHeaders["X-Timestamp"]);
   headers.set("X-Signature", signatureHeaders["X-Signature"]);
 
-  return networkFetch(url, { ...init, headers });
+  return apiFetch(url, { ...init, headers });
+}
+
+/** Authenticated JSON GET that signs the request and parses the response. */
+export async function signedPublisherGetJson<T>(
+  url: string,
+  apiKey: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await signedPublisherRequest(url, apiKey, {
+    ...init,
+    method: "GET",
+  });
+  return readJson<T>(response);
+}
+
+/** Authenticated JSON fetch with request signing headers (writes). */
+export async function signedPublisherFetch(
+  url: string,
+  apiKey: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  return signedPublisherRequest(url, apiKey, init);
 }
