@@ -9,6 +9,15 @@ import {
   signedPublisherFetch,
   EMPTY_BODY_HASH,
 } from "./http.js";
+import { ApiError, getJson, isArray, hasKeys, publishLinkResource, publishFileResource } from "./http.js";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { ApiError, getJson, isArray, hasKeys } from "./http.js";
+
+function headersOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, string> {
+  const call = fetchMock.mock.calls[0];
+  const init = call?.[1] as RequestInit | undefined;
+  return (init?.headers ?? {}) as Record<string, string>;
+}
 
 function respond(body: string, { status = 200, type = "application/json" } = {}) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status, headers: { "content-type": type } })));
@@ -21,11 +30,35 @@ async function failure(promise: Promise<unknown>): Promise<ApiError> {
 }
 
 describe("getJson", () => {
+  beforeEach(() => localStorage.clear());
   afterEach(() => vi.unstubAllGlobals());
 
   it("returns parsed JSON on success", async () => {
     respond(JSON.stringify([{ id: "1" }]));
     await expect(getJson("/resources", "Couldn't load", undefined, isArray)).resolves.toEqual([{ id: "1" }]);
+  });
+
+  it("signs read requests instead of sending a raw API key", async () => {
+    respond(JSON.stringify([{ id: "1" }]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const headers = headersOf(vi.mocked(fetch));
+    expect(headers["X-Timestamp"]).toBeTruthy();
+    expect(headers["X-Signature"]).toBeTruthy();
+    expect(headers["x-api-key"]).toBeUndefined();
+    expect(headers["X-Api-Key"]).toBeUndefined();
+  it("sends the session token as a Bearer Authorization header", async () => {
+    localStorage.setItem("synapsvault.sessionToken", "tok_123");
+    respond(JSON.stringify([]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok_123");
+  });
+
+  it("omits the Authorization header when there is no session token", async () => {
+    respond(JSON.stringify([]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it("explains an HTML response (SPA fallback) instead of 'Unexpected token <'", async () => {
@@ -49,9 +82,9 @@ describe("getJson", () => {
   });
 
   it("surfaces the backend's own error message", async () => {
-    respond(JSON.stringify({ error: "Invalid API key" }), { status: 401 });
+    respond(JSON.stringify({ error: "Invalid session token" }), { status: 401 });
     const err = await failure(getJson("/publishers/me/resources", "Failed"));
-    expect(err).toMatchObject({ kind: "http", status: 401, message: "Invalid API key" });
+    expect(err).toMatchObject({ kind: "http", status: 401, message: "Invalid session token" });
   });
 
   it("falls back to a readable message with the status when the backend gives none", async () => {
@@ -75,6 +108,65 @@ describe("getJson", () => {
     respond(JSON.stringify({ unexpected: true }));
     const err = await failure(getJson("/agent/status", "Failed to load agent status", undefined, hasKeys("agent", "stats")));
     expect(err.message).toMatch(/unexpected response/);
+  });
+
+  it.each([
+    ["/", "%2F"],
+    ["?", "%3F"],
+    ["#", "%23"],
+    [" ", "%20"],
+  ])("percent-encodes %j in the request path", async (char, encoded) => {
+    respond(JSON.stringify([]));
+    await getJson(`/resources/${char}/meta`, "Failed");
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain(encoded);
+    expect(String(url)).not.toContain(`/resources/${char}/meta`);
+  });
+
+  it("encodes multiple special characters without double-encoding", async () => {
+    respond(JSON.stringify([]));
+    await getJson("/resources/a b/c?d#e/meta", "Failed");
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain("/resources/a%20b%2Fc%3Fd%23e/meta");
+  });
+});
+
+describe("signed publish requests", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function captureFetch() {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("publishLinkResource signs the POST with X-Signature, X-Timestamp and x-api-key", async () => {
+    const fetchMock = captureFetch();
+    await publishLinkResource("https://example.com", "key-123", "secret-456");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/resources\/link$/);
+    expect(init.method).toBe("POST");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("key-123");
+    expect(headers["X-Timestamp"]).toBeTruthy();
+    expect(headers["X-Signature"]).toBeTruthy();
+  });
+
+  it("publishFileResource signs the POST with X-Signature, X-Timestamp and x-api-key", async () => {
+    const fetchMock = captureFetch();
+    const file = new File(["hello"], "hello.txt", { type: "text/plain" });
+    await publishFileResource(file, "key-123", "secret-456");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/resources\/upload$/);
+    expect(init.method).toBe("POST");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("key-123");
+    expect(headers["X-Timestamp"]).toBeTruthy();
+    expect(headers["X-Signature"]).toBeTruthy();
   });
 });
 

@@ -40,6 +40,17 @@ describe("App catalog empty states", () => {
     vi.mocked(fetchRegistryStatus).mockResolvedValue({ resourceCount: 0 });
   });
 
+  it("gates creator features on the authenticated session, not a build-time key", async () => {
+    vi.mocked(fetchCatalog).mockResolvedValue([]);
+
+    render(<App />);
+
+    // No VITE_API_KEY is stubbed anywhere in these tests; creator affordances
+    // must be driven purely by the authenticated session.
+    expect(import.meta.env.VITE_API_KEY).toBeUndefined();
+    expect(screen.queryByRole("link", { name: /Publish a resource/ })).not.toBeInTheDocument();
+  });
+
   it("shows the catalog-is-empty state when no resources are returned", async () => {
     vi.mocked(fetchCatalog).mockResolvedValue([]);
 

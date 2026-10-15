@@ -10,6 +10,16 @@ interface Props {
 type PublishType = "link" | "file";
 type Step = "form" | "submitting" | "success" | "error";
 
+export function isValidHttpUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:";
+}
+
 export function PublishModal({ apiKey, onClose, onPublished }: Props) {
   const [publishType, setPublishType] = useState<PublishType>("link");
   const [step, setStep] = useState<Step>("form");
@@ -23,8 +33,15 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setStep("submitting");
     setErrorMsg("");
+
+    if (publishType === "link" && !isValidHttpUrl(externalUrl)) {
+      setErrorMsg("Please enter a valid URL starting with http:// or https://.");
+      setStep("error");
+      return;
+    }
+
+    setStep("submitting");
 
     try {
       if (publishType === "link") {
