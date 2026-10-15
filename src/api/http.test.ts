@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { ApiError, getJson, isArray, hasKeys, publishLinkResource, publishFileResource } from "./http.js";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { ApiError, getJson, isArray, hasKeys } from "./http.js";
 
 function respond(body: string, { status = 200, type = "application/json" } = {}) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status, headers: { "content-type": type } })));
@@ -12,11 +14,27 @@ async function failure(promise: Promise<unknown>): Promise<ApiError> {
 }
 
 describe("getJson", () => {
+  beforeEach(() => localStorage.clear());
   afterEach(() => vi.unstubAllGlobals());
 
   it("returns parsed JSON on success", async () => {
     respond(JSON.stringify([{ id: "1" }]));
     await expect(getJson("/resources", "Couldn't load", undefined, isArray)).resolves.toEqual([{ id: "1" }]);
+  });
+
+  it("sends the session token as a Bearer Authorization header", async () => {
+    localStorage.setItem("synapsvault.sessionToken", "tok_123");
+    respond(JSON.stringify([]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok_123");
+  });
+
+  it("omits the Authorization header when there is no session token", async () => {
+    respond(JSON.stringify([]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it("explains an HTML response (SPA fallback) instead of 'Unexpected token <'", async () => {
@@ -40,9 +58,9 @@ describe("getJson", () => {
   });
 
   it("surfaces the backend's own error message", async () => {
-    respond(JSON.stringify({ error: "Invalid API key" }), { status: 401 });
+    respond(JSON.stringify({ error: "Invalid session token" }), { status: 401 });
     const err = await failure(getJson("/publishers/me/resources", "Failed"));
-    expect(err).toMatchObject({ kind: "http", status: 401, message: "Invalid API key" });
+    expect(err).toMatchObject({ kind: "http", status: 401, message: "Invalid session token" });
   });
 
   it("falls back to a readable message with the status when the backend gives none", async () => {

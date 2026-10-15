@@ -63,6 +63,9 @@ jobs:
       - name: Enforce bundle size budgets
         run: node scripts/check-bundle-size.mjs
 
+      - name: Scan for leaked secrets
+        run: node scripts/scan-secrets.mjs
+
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with:

@@ -1,6 +1,24 @@
 import { API_BASE, describeApiTarget } from "../lib/config.js";
 
 /**
+ * Runtime-provided credential (e.g. a session token) used to sign requests.
+ * It is intentionally NOT sourced from a build-time VITE_* variable: the
+ * static API key must never be shipped to the client. The server-side proxy
+ * attaches the real credentials; this value only signs the request flow.
+ */
+let requestSigningKey: string | null = null;
+
+/** Set (or clear) the runtime credential used to sign outgoing requests. */
+export function setRequestSigningKey(key: string | null): void {
+  requestSigningKey = key && key.trim() ? key.trim() : null;
+}
+
+/** Current runtime credential, if any. */
+export function getRequestSigningKey(): string | null {
+  return requestSigningKey;
+}
+
+/**
  * Why a request to the SynapsVault backend failed:
  *  - "unreachable": network error, CORS rejection, or a gateway/proxy error
  *    (backend down). Retrying later may help.
@@ -46,6 +64,28 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * Supplies the current session token (or null when signed out). Registered by
+ * session.ts so this module stays free of auth-state imports.
+ */
+export type TokenProvider = () => string | null;
+
+let tokenProvider: TokenProvider | null = null;
+
+/** Register the session token provider used to authorize API requests. */
+export function setTokenProvider(provider: TokenProvider | null): void {
+  tokenProvider = provider;
+}
+
+/** Merge the Authorization header into `init` when a session token exists. */
+function withAuth(init?: RequestInit): RequestInit | undefined {
+  const token = tokenProvider?.() ?? null;
+  if (!token) return init;
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
+}
+
+/**
  * fetch() that turns network failures (backend down, DNS, CORS) into an
  * "unreachable" ApiError. Abort errors are rethrown untouched so callers can
  * ignore them.
@@ -59,9 +99,22 @@ export async function networkFetch(url: string, init?: RequestInit): Promise<Res
   }
 }
 
+/**
+ * Attach the runtime signing credential to a request's headers. The static
+ * x-api-key header is never injected here — the server-side proxy is
+ * responsible for attaching real credentials.
+ */
+function withSigningHeaders(init?: RequestInit): RequestInit | undefined {
+  if (!requestSigningKey) return init;
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${requestSigningKey}`);
+  return { ...init, headers };
+}
+
 /** networkFetch against a backend path like "/resources". */
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return networkFetch(apiUrl(path), init);
+  return networkFetch(apiUrl(path), withSigningHeaders(init));
+  return networkFetch(apiUrl(path), withAuth(init));
 }
 
 function isHtml(res: Response): boolean {
