@@ -3,7 +3,7 @@
  * Mirrors server/src/utils/requestSignature.ts — keep in sync when changing the scheme.
  */
 
-import { networkFetch } from "./http.js";
+import { apiFetch, networkFetch, readJson } from "./http.js";
 
 export const EMPTY_BODY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -70,15 +70,20 @@ export async function signPublisherRequestHeaders(params: {
   };
 }
 
-/** Authenticated JSON fetch with optional request signing headers. */
-export async function signedPublisherFetch(
+/**
+ * Shared authenticated request helper. Signs every authenticated request
+ * (reads and writes) via signPublisherRequestHeaders and never sends the raw
+ * API key. All authenticated calls should route through this helper.
+ */
+export async function signedPublisherRequest(
   url: string,
   apiKey: string,
   init: RequestInit = {},
 ): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const body = typeof init.body === "string" ? init.body : undefined;
-  const path = new URL(url).pathname + new URL(url).search;
+  const parsed = new URL(url);
+  const path = parsed.pathname + parsed.search;
   const idempotencyKey =
     init.headers instanceof Headers
       ? (init.headers.get("Idempotency-Key") ?? undefined)
@@ -93,12 +98,33 @@ export async function signedPublisherFetch(
   });
 
   const headers = new Headers(init.headers);
-  headers.set("x-api-key", apiKey);
   if (body) {
     headers.set("Content-Type", "application/json");
   }
   headers.set("X-Timestamp", signatureHeaders["X-Timestamp"]);
   headers.set("X-Signature", signatureHeaders["X-Signature"]);
 
-  return networkFetch(url, { ...init, headers });
+  return apiFetch(url, { ...init, headers });
+}
+
+/** Authenticated JSON GET that signs the request and parses the response. */
+export async function signedPublisherGetJson<T>(
+  url: string,
+  apiKey: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await signedPublisherRequest(url, apiKey, {
+    ...init,
+    method: "GET",
+  });
+  return readJson<T>(response);
+}
+
+/** Authenticated JSON fetch with request signing headers (writes). */
+export async function signedPublisherFetch(
+  url: string,
+  apiKey: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  return signedPublisherRequest(url, apiKey, init);
 }

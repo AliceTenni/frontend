@@ -137,3 +137,45 @@ export async function getJson<T>(
 ): Promise<T> {
   return readJson<T>(await apiFetch(path, init), fallback, isValid);
 }
+
+/**
+ * A signing credential/token used to authenticate reads. Callers pass the
+ * token itself rather than the raw key so the key never leaves the signer.
+ */
+export interface SigningCredential {
+  /** Header name carrying the signature (e.g. "x-signature"). */
+  header: string;
+  /** Signature value for this request. */
+  signature: string;
+  /** Optional header carrying the token/public identifier. */
+  tokenHeader?: string;
+  /** Optional token/public identifier value. */
+  token?: string;
+}
+
+/** Build the signature headers for a signed request. */
+export function signatureHeaders(credential: SigningCredential): Record<string, string> {
+  const headers: Record<string, string> = { [credential.header]: credential.signature };
+  if (credential.tokenHeader && credential.token != null) {
+    headers[credential.tokenHeader] = credential.token;
+  }
+  return headers;
+}
+
+/**
+ * Signed GET: like getJson, but forwards the signature headers from a
+ * signing credential so authenticated reads are expressed uniformly.
+ */
+export async function signedGetJson<T>(
+  path: string,
+  fallback: string,
+  credential: SigningCredential,
+  init?: RequestInit,
+  isValid?: Validator,
+): Promise<T> {
+  const headers = new Headers(init?.headers);
+  for (const [name, value] of Object.entries(signatureHeaders(credential))) {
+    headers.set(name, value);
+  }
+  return readJson<T>(await apiFetch(path, { ...init, headers }), fallback, isValid);
+}

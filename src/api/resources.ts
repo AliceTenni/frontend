@@ -66,12 +66,8 @@ export async function fetchCatalog(filters?: CatalogFilters): Promise<unknown[]>
 
 /** Resources owned by the API key holder. Callers supply the row shape. */
 export async function fetchMyResources<T = unknown>(apiKey: string): Promise<T[]> {
-  return getJson<T[]>(
-    "/publishers/me/resources",
-    "Failed to fetch your resources",
-    { headers: { "x-api-key": apiKey } },
-    isArray,
-  );
+  const res = await signedFetch("/publishers/me/resources", apiKey, { method: "GET" });
+  return readJson(res, "Failed to fetch your resources", isArray);
 }
 
 export async function prepareRegisterTx(
@@ -88,9 +84,8 @@ export async function prepareRegisterTx(
     description?: string;
   };
 }> {
-  return getJson(`/resources/${resourceId}/register/prepare`, "Failed to prepare register transaction", {
-    headers: { "x-api-key": apiKey },
-  });
+  const res = await signedFetch(`/resources/${resourceId}/register/prepare`, apiKey, { method: "GET" });
+  return readJson(res, "Failed to prepare register transaction");
 }
 
 /**
