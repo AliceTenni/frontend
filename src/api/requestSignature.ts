@@ -7,7 +7,28 @@ import { networkFetch } from "./http.js";
 
 export const EMPTY_BODY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
+/**
+ * Request signing relies on the Web Crypto API, which is only exposed in
+ * secure contexts (HTTPS or localhost). Fail fast with an actionable message
+ * instead of an opaque TypeError from `crypto.subtle` being undefined.
+ */
+export function assertSecureContext(): void {
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    throw new Error(
+      "Request signing requires a secure context (HTTPS or localhost). " +
+        "The current page is not served over a secure context, so window.isSecureContext is false.",
+    );
+  }
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    throw new Error(
+      "Request signing requires the Web Crypto API (crypto.subtle), which is unavailable. " +
+        "Serve the app over HTTPS or localhost to enable request signing.",
+    );
+  }
+}
+
 async function sha256Hex(data: string): Promise<string> {
+  assertSecureContext();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -15,6 +36,7 @@ async function sha256Hex(data: string): Promise<string> {
 }
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+  assertSecureContext();
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -54,6 +76,7 @@ export async function signPublisherRequestHeaders(params: {
   body?: string;
   idempotencyKey?: string;
 }): Promise<Record<string, string>> {
+  assertSecureContext();
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const bodyHash = params.body ? await hashRequestBody(params.body) : EMPTY_BODY_HASH;
   const canonical = buildCanonicalString({
