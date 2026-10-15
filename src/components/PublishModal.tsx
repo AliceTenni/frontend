@@ -35,6 +35,10 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
     e.preventDefault();
     setErrorMsg("");
 
+    const idempotencyKey =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     if (publishType === "link" && !isValidHttpUrl(externalUrl)) {
       setErrorMsg("Please enter a valid URL starting with http:// or https://.");
       setStep("error");
@@ -48,6 +52,7 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
         await publishLinkResource(
           { title, description: description || undefined, price, externalUrl },
           apiKey,
+          idempotencyKey,
         );
       } else {
         if (!file) throw new Error("Please select a file to upload before publishing.");
@@ -56,7 +61,7 @@ export function PublishModal({ apiKey, onClose, onPublished }: Props) {
         if (description) formData.append("description", description);
         formData.append("price", price);
         formData.append("file", file);
-        await publishFileResource(formData, apiKey);
+        await publishFileResource(formData, apiKey, idempotencyKey);
       }
       setStep("success");
       onPublished();

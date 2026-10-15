@@ -14,10 +14,17 @@ export function useEditPrice(resourceId: string, apiKey: string) {
   async function editPrice(price: string) {
     setError(null);
     setNetworkWarning(null);
+    // One idempotency key per logical operation, reused across prepare/submit retries
+    const idempotencyKey = crypto.randomUUID();
     try {
       // Step 1 — fetch unsigned XDR from the server
       setStatus("preparing");
-      const { unsignedXdr, networkPassphrase } = await prepareSetPrice(resourceId, price, apiKey);
+      const { unsignedXdr, networkPassphrase } = await prepareSetPrice(
+        resourceId,
+        price,
+        apiKey,
+        idempotencyKey,
+      );
 
       // Step 1b — warn if wallet is on the wrong network (non-blocking)
       const warning = await checkNetwork(networkPassphrase);
@@ -33,7 +40,7 @@ export function useEditPrice(resourceId: string, apiKey: string) {
 
       // Step 3 — submit signed XDR and sync DB price
       setStatus("submitting");
-      const updated = await submitSetPrice(resourceId, signedXdr, price, apiKey);
+      const updated = await submitSetPrice(resourceId, signedXdr, price, apiKey, idempotencyKey);
       setNewPrice(updated.price);
       setStatus("confirmed");
     } catch (err) {

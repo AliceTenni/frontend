@@ -20,6 +20,11 @@ function signedFetch(path: string, apiKey: string, init: RequestInit): Promise<R
   return signedPublisherFetch(apiUrl(path), apiKey, init);
 }
 
+/** Adds an `Idempotency-Key` header (when provided) so it is included in the signature. */
+function withIdempotencyKey(headers: Record<string, string>, idempotencyKey?: string): Record<string, string> {
+  return idempotencyKey ? { ...headers, "Idempotency-Key": idempotencyKey } : headers;
+}
+
 export interface CatalogFilters {
   search?: string;
   minPrice?: string;
@@ -122,10 +127,12 @@ export async function submitRegisterTx(
   resourceId: string,
   signedXdr: string,
   apiKey: string,
+  idempotencyKey?: string,
 ): Promise<{ id: string; onchainStatus: string; txHash: string }> {
   const body = JSON.stringify({ signedXdr });
   const res = await signedFetch(`/resources/${resourceId}/register`, apiKey, {
     method: "POST",
+    headers: withIdempotencyKey({}, idempotencyKey),
     body,
   });
   if (!res.ok && (res.headers.get("content-type") ?? "").includes("application/json")) {
@@ -147,9 +154,14 @@ export async function prepareSetPrice(
   resourceId: string,
   price: string,
   apiKey: string,
+  idempotencyKey?: string,
 ): Promise<{ unsignedXdr: string; networkPassphrase: string }> {
   const body = JSON.stringify({ price });
-  const res = await signedFetch(`/resources/${resourceId}/price/prepare`, apiKey, { method: "POST", body });
+  const res = await signedFetch(`/resources/${resourceId}/price/prepare`, apiKey, {
+    method: "POST",
+    headers: withIdempotencyKey({}, idempotencyKey),
+    body,
+  });
   return readJson(res, "Failed to prepare transaction");
 }
 
@@ -169,9 +181,14 @@ export async function prepareTransferOwnership(
   resourceId: string,
   newCreator: string,
   apiKey: string,
+  idempotencyKey?: string,
 ): Promise<{ unsignedXdr: string; networkPassphrase: string }> {
   const body = JSON.stringify({ newCreator });
-  const res = await signedFetch(`/resources/${resourceId}/ownership/prepare`, apiKey, { method: "POST", body });
+  const res = await signedFetch(`/resources/${resourceId}/ownership/prepare`, apiKey, {
+    method: "POST",
+    headers: withIdempotencyKey({}, idempotencyKey),
+    body,
+  });
   return readJson(res, "Failed to prepare transfer transaction");
 }
 
@@ -180,9 +197,14 @@ export async function submitTransferOwnership(
   signedXdr: string,
   newCreator: string,
   apiKey: string,
+  idempotencyKey?: string,
 ): Promise<{ id: string; newCreator: string; status: string }> {
   const body = JSON.stringify({ signedXdr, newCreator });
-  const res = await signedFetch(`/resources/${resourceId}/ownership`, apiKey, { method: "POST", body });
+  const res = await signedFetch(`/resources/${resourceId}/ownership`, apiKey, {
+    method: "POST",
+    headers: withIdempotencyKey({}, idempotencyKey),
+    body,
+  });
   return readJson(res, "Failed to submit transfer transaction");
 }
 
@@ -206,6 +228,7 @@ export async function publishLinkResource(
   data: { title: string; description?: string; price: string; externalUrl: string },
   apiKey: string,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<unknown> {
   let scheme: string;
   try {
@@ -218,7 +241,7 @@ export async function publishLinkResource(
   }
   const res = await apiFetch("/resources", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+    headers: withIdempotencyKey({ "Content-Type": "application/json", "x-api-key": apiKey }, idempotencyKey),
     body: JSON.stringify(data),
     signal,
   });
@@ -229,9 +252,11 @@ export async function publishFileResource(
   formData: FormData,
   apiKey: string,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<unknown> {
   const res = await signedFetch("/resources", apiKey, {
     method: "POST",
+    headers: withIdempotencyKey({ "x-api-key": apiKey }, idempotencyKey),
     body: formData,
     signal,
   });
@@ -243,8 +268,14 @@ export async function submitSetPrice(
   signedXdr: string,
   price: string,
   apiKey: string,
+  idempotencyKey?: string,
 ): Promise<{ id: string; price: string; status: string }> {
   const body = JSON.stringify({ signedXdr, price });
+  const res = await signedFetch(`/resources/${resourceId}/price`, apiKey, {
+    method: "POST",
+    headers: withIdempotencyKey({}, idempotencyKey),
+    body,
+  });
   const res = await signedFetch(`/resources/${encodePathSegment(resourceId)}/price`, apiKey, { method: "POST", body });
   return readJson(res, "Failed to submit transaction");
 }
