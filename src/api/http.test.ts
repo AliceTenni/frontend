@@ -3,6 +3,12 @@ import { ApiError, getJson, isArray, hasKeys, publishLinkResource, publishFileRe
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { ApiError, getJson, isArray, hasKeys } from "./http.js";
 
+function headersOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, string> {
+  const call = fetchMock.mock.calls[0];
+  const init = call?.[1] as RequestInit | undefined;
+  return (init?.headers ?? {}) as Record<string, string>;
+}
+
 function respond(body: string, { status = 200, type = "application/json" } = {}) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status, headers: { "content-type": type } })));
 }
@@ -22,6 +28,14 @@ describe("getJson", () => {
     await expect(getJson("/resources", "Couldn't load", undefined, isArray)).resolves.toEqual([{ id: "1" }]);
   });
 
+  it("signs read requests instead of sending a raw API key", async () => {
+    respond(JSON.stringify([{ id: "1" }]));
+    await getJson("/resources", "Couldn't load", undefined, isArray);
+    const headers = headersOf(vi.mocked(fetch));
+    expect(headers["X-Timestamp"]).toBeTruthy();
+    expect(headers["X-Signature"]).toBeTruthy();
+    expect(headers["x-api-key"]).toBeUndefined();
+    expect(headers["X-Api-Key"]).toBeUndefined();
   it("sends the session token as a Bearer Authorization header", async () => {
     localStorage.setItem("synapsvault.sessionToken", "tok_123");
     respond(JSON.stringify([]));
