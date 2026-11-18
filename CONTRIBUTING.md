@@ -139,6 +139,61 @@ perf(catalog): memoize ResourceCard component
 
 Uses Stellar Freighter for wallet connection. See `src/api/agent.ts` for integration patterns.
 
+For testing wallet-dependent components without triggering a real signature request, see
+[Testing wallet interactions](#testing-wallet-interactions) below.
+
+## Testing wallet interactions
+
+Components that call Freighter should never reach the extension during unit tests.
+Mock the hook that wraps the wallet call instead of the extension itself.
+
+`BuyModal` delegates all payment logic to `useBuyResource`. The test suite in
+`src/components/BuyModal.test.tsx` mocks that hook at the module boundary:
+
+```ts
+// At the top of the test file
+vi.mock("../hooks/useBuyResource.js", () => ({
+  useBuyResource: vi.fn(),
+}));
+```
+
+Then each test drives the component into the desired state by configuring the mock's
+return value with `vi.mocked`:
+
+```ts
+// Wallet connected — idle state, pay button enabled
+vi.mocked(useBuyResource).mockReturnValue({
+  status: "idle",
+  result: null,
+  error: null,
+  buy: mockBuy,
+  reset: mockReset,
+});
+render(<BuyModal
+  resourceTitle="Premium Dataset"
+  price="1.50"
+  recipient="GBUYER1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  accessUrl="https://api.example.com/resources/abc"
+  walletAddress="GWALLET1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  onClose={vi.fn()}
+  onCopyUrl={vi.fn()}
+/>);
+// pay button is now enabled
+expect(screen.getByRole("button", { name: /pay 1\.50 usdc/i })).toBeEnabled();
+```
+
+**Key patterns**
+
+| Scenario | `status` to set | What to assert |
+|---|---|---|
+| No wallet connected | `"idle"` + `walletAddress={null}` | Pay button disabled, "connect your Freighter wallet" notice visible |
+| Payment in flight | `"paying"` | Spinner has `aria-busy="true"`, Close button disabled |
+| Payment succeeded | `"success"` + `result.explorerUrl` | Explorer link rendered with correct `href` |
+| Payment failed | `"error"` + `error` message | Error text visible, "Try again" button calls `buy` |
+
+Because the mock controls all state transitions, tests run offline and never prompt
+the Freighter browser extension for a signature.
+
 ## Payment Integration
 
 Uses x402 protocol via `@x402/fetch` and `@x402/stellar`. See `src/api/payments.ts`.
